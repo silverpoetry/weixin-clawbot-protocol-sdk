@@ -1,15 +1,10 @@
 import { join } from "node:path";
 import { readdirSync, statSync } from "node:fs";
-import { DEFAULT_BASE_URL, getAccountsDir } from "./constants.js";
-import { loadJson, saveJson } from "./store.js";
+import { getAccountsDir, DEFAULT_BASE_URL } from "../shared/constants.js";
+import { loadJson, saveJson } from "../shared/store.js";
+import type { LoginAccount } from "../sdk/auth.js";
 
-export interface AccountData {
-  botToken: string;
-  accountId: string;
-  baseUrl: string;
-  userId: string;
-  createdAt: string;
-}
+export interface AccountData extends LoginAccount {}
 
 function validateAccountId(accountId: string): void {
   if (!/^[a-zA-Z0-9_.@=-]+$/.test(accountId)) {

@@ -1,6 +1,5 @@
-import type { WeChatApi } from "./api.js";
-import { loadConversationState, saveConversationState, type ConversationState } from "./conversation-state.js";
-import type { MessageItem, WeixinMessage } from "./types.js";
+import type { ClawbotClient, MessageItem, WeixinMessage } from "../sdk/index.js";
+import { loadConversationState, saveConversationState, type ConversationState } from "./conversation-state-store.js";
 
 export interface SessionTarget {
   toUserId: string;
@@ -20,15 +19,25 @@ function hasText(items: MessageItem[] | undefined): boolean {
   );
 }
 
+function extractText(items: MessageItem[] | undefined): string | undefined {
+  const text = items
+    ?.filter((item) => item.type === 1 && item.text_item?.text)
+    .map((item) => item.text_item?.text?.trim())
+    .filter(Boolean)
+    .join("\n");
+
+  return text || undefined;
+}
+
 export async function resolveLatestSessionTarget(
-  api: Pick<WeChatApi, "getUpdates">,
+  client: Pick<ClawbotClient, "getUpdates">,
   stateStore: ConversationStateStore = {
     load: loadConversationState,
     save: saveConversationState,
   },
 ): Promise<SessionTarget> {
   const previousState = stateStore.load();
-  const updates = await api.getUpdates(previousState.getUpdatesBuf);
+  const updates = await client.getUpdates(previousState.getUpdatesBuf);
   const messages = updates.msgs ?? [];
 
   const candidates = messages
@@ -69,18 +78,4 @@ export async function resolveLatestSessionTarget(
 
   stateStore.save(nextState);
   throw new Error("No inbound WeChat conversation found. Send a message to the bound bot first, then retry.");
-}
-
-function extractText(items: MessageItem[] | undefined): string | undefined {
-  const text = items
-    ?.filter((item) => item.type === 1 && item.text_item?.text)
-    .map((item) => item.text_item?.text?.trim())
-    .filter(Boolean)
-    .join("\n");
-
-  return text || undefined;
-}
-
-export function clearConversationState(): void {
-  saveConversationState({});
 }

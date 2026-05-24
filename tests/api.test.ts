@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { WeChatApi } from "../src/api.js";
+import { ClawbotClient } from "../src/sdk/client.js";
 
 test("WeChatApi sends request with expected headers and body", async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -12,8 +12,8 @@ test("WeChatApi sends request with expected headers and body", async () => {
   }) as typeof fetch;
 
   try {
-    const api = new WeChatApi("token-1", "https://ilinkai.weixin.qq.com");
-    await api.sendMessage({
+    const client = new ClawbotClient("token-1", "https://ilinkai.weixin.qq.com");
+    await client.sendMessage({
       msg: {
         from_user_id: "bot-1",
         to_user_id: "clawbot",
@@ -44,9 +44,9 @@ test("WeChatApi throws when sendmessage ret is non-zero", async () => {
     new Response(JSON.stringify({ ret: -3 }), { status: 200 })) as typeof fetch;
 
   try {
-    const api = new WeChatApi("token-1", "https://ilinkai.weixin.qq.com");
-    await assert.rejects(
-      api.sendMessage({
+  const client = new ClawbotClient("token-1", "https://ilinkai.weixin.qq.com");
+  await assert.rejects(
+      client.sendMessage({
         msg: {
           from_user_id: "bot-1",
           to_user_id: "clawbot",

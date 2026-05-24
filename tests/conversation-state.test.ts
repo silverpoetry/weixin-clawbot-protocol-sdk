@@ -8,7 +8,7 @@ test("conversation state persists to disk", async () => {
   const dir = mkdtempSync(join(tmpdir(), "wmsg-state-"));
   process.env.WECHAT_MESSAGE_DATA_DIR = dir;
 
-  const stateModule = await import(`../src/conversation-state.js?${Date.now()}`);
+  const stateModule = await import(`../src/example/conversation-state-store.js?${Date.now()}`);
   stateModule.saveConversationState({
     toUserId: "user-1",
     contextToken: "ctx-1",

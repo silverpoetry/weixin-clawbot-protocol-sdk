@@ -8,8 +8,8 @@ test("saveAccount and loadLatestAccount persist and retrieve accounts", async ()
   const dir = mkdtempSync(join(tmpdir(), "wmsg-account-"));
   process.env.WECHAT_MESSAGE_DATA_DIR = dir;
 
-  const accountModule = await import(`../src/account.js?${Date.now()}`);
-  const constantsModule = await import(`../src/constants.js?${Date.now()}`);
+  const accountModule = await import(`../src/example/account-store.js?${Date.now()}`);
+  const constantsModule = await import(`../src/shared/constants.js?${Date.now()}`);
 
   mkdirSync(constantsModule.getAccountsDir(), { recursive: true });
   accountModule.saveAccount({

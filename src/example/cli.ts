@@ -1,13 +1,11 @@
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import qrcodeTerminal from "qrcode-terminal";
+import { ClawbotClient, sendTextMessage, startQrLogin, waitForQrScan } from "../sdk/index.js";
 import { loadConfig } from "./config.js";
-import { WeChatApi } from "./api.js";
-import { sendTextMessage } from "./sender.js";
-import { loadLatestAccount } from "./account.js";
-import { startQrLogin, waitForQrScan } from "./login.js";
-import { resolveLatestSessionTarget } from "./session-target.js";
-import { loadConversationState } from "./conversation-state.js";
+import { saveAccount, loadLatestAccount } from "./account-store.js";
+import { resolveLatestSessionTarget } from "./session-target-resolver.js";
+import { loadConversationState } from "./conversation-state-store.js";
 
 export interface CliOptions {
   command?: string;
@@ -55,6 +53,7 @@ async function runSetup(): Promise<void> {
   qrcodeTerminal.generate(qrcodeUrl, { small: true });
   process.stdout.write("\n等待扫码确认...\n");
   const account = await waitForQrScan(qrcodeId);
+  saveAccount(account);
   process.stdout.write(`绑定成功，账号已保存: ${account.accountId}\n`);
 }
 
@@ -68,10 +67,10 @@ export async function runCli(argv: string[]): Promise<void> {
   const config = loadConfig();
   const account = loadLatestAccount();
   if (!account) {
-    throw new Error("No bound account found. Run `node dist/src/cli.js setup` first.");
+    throw new Error("No bound account found. Run `node dist/src/example/cli.js setup` first.");
   }
 
-  const api = new WeChatApi(account.botToken, account.baseUrl || config.baseUrl);
+  const client = new ClawbotClient(account.botToken, account.baseUrl || config.baseUrl);
   const text = options.text || "helloworld";
   const target = options.to
     ? {
@@ -79,9 +78,9 @@ export async function runCli(argv: string[]): Promise<void> {
         contextToken: options.context ?? config.contextToken,
         source: "stored" as const,
       }
-    : await resolveLatestSessionTarget(api);
+    : await resolveLatestSessionTarget(client);
 
-  await sendTextMessage(api, {
+  await sendTextMessage(client, {
     fromUserId: account.accountId,
     toUserId: target.toUserId,
     contextToken: target.contextToken,

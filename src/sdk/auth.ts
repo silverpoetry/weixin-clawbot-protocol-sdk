@@ -1,10 +1,12 @@
-import type { AccountData } from "./account.js";
-import { saveAccount } from "./account.js";
-import { DEFAULT_BASE_URL } from "./constants.js";
+import { DEFAULT_BASE_URL } from "../shared/constants.js";
 
-const QR_CODE_URL = `${DEFAULT_BASE_URL}/ilink/bot/get_bot_qrcode?bot_type=3`;
-const QR_STATUS_URL = `${DEFAULT_BASE_URL}/ilink/bot/get_qrcode_status`;
-const DEFAULT_POLL_INTERVAL_MS = 3_000;
+export interface LoginAccount {
+  botToken: string;
+  accountId: string;
+  baseUrl: string;
+  userId: string;
+  createdAt: string;
+}
 
 interface QrCodeResponse {
   ret: number;
@@ -20,6 +22,10 @@ interface QrStatusResponse {
   baseurl?: string;
   ilink_user_id?: string;
 }
+
+const QR_CODE_URL = `${DEFAULT_BASE_URL}/ilink/bot/get_bot_qrcode?bot_type=3`;
+const QR_STATUS_URL = `${DEFAULT_BASE_URL}/ilink/bot/get_qrcode_status`;
+const DEFAULT_POLL_INTERVAL_MS = 3_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -45,7 +51,7 @@ export async function startQrLogin(): Promise<{ qrcodeUrl: string; qrcodeId: str
 export async function waitForQrScan(
   qrcodeId: string,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
-): Promise<AccountData> {
+): Promise<LoginAccount> {
   while (true) {
     const response = await fetch(`${QR_STATUS_URL}?qrcode=${encodeURIComponent(qrcodeId)}`);
     if (!response.ok) {
@@ -58,21 +64,17 @@ export async function waitForQrScan(
       case "scaned":
         await sleep(pollIntervalMs);
         continue;
-      case "confirmed": {
+      case "confirmed":
         if (!data.bot_token || !data.ilink_bot_id || !data.ilink_user_id) {
           throw new Error("QR confirmed but missing required fields in response");
         }
-
-        const account: AccountData = {
+        return {
           botToken: data.bot_token,
           accountId: data.ilink_bot_id,
           baseUrl: data.baseurl || DEFAULT_BASE_URL,
           userId: data.ilink_user_id,
           createdAt: new Date().toISOString(),
         };
-        saveAccount(account);
-        return account;
-      }
       case "expired":
         throw new Error("QR code expired");
       default:

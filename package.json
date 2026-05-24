@@ -1,12 +1,12 @@
 {
   "name": "weixinmessage",
   "version": "1.0.0",
-  "description": "Minimal WeChat ClawBot sender inspired by WeChatCodex",
+  "description": "Lightweight WeChat ClawBot protocol SDK with a file-backed example app",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test dist/tests/*.test.js",
-    "send": "node dist/src/cli.js"
+    "send": "node dist/src/example/cli.js"
   },
   "dependencies": {
     "qrcode-terminal": "^0.12.0"

@@ -1,5 +1,5 @@
 import { MessageItemType, MessageState, MessageType, type SendMessageReq } from "./types.js";
-import { WeChatApi } from "./api.js";
+import type { ClawbotClient } from "./client.js";
 
 export interface SendTextInput {
   fromUserId: string;
@@ -34,9 +34,9 @@ export function buildSendTextRequest(input: SendTextInput): SendMessageReq {
 }
 
 export async function sendTextMessage(
-  api: Pick<WeChatApi, "sendMessage">,
+  client: Pick<ClawbotClient, "sendMessage">,
   input: SendTextInput,
 ): Promise<void> {
   const request = buildSendTextRequest(input);
-  await api.sendMessage(request);
+  await client.sendMessage(request);
 }

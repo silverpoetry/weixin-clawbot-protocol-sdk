@@ -1,8 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 test("startQrLogin returns qr code payload", async () => {
   const originalFetch = globalThis.fetch;
@@ -17,8 +14,8 @@ test("startQrLogin returns qr code payload", async () => {
     )) as typeof fetch;
 
   try {
-    const login = await import(`../src/login.js?${Date.now()}`);
-    const result = await login.startQrLogin();
+    const auth = await import(`../src/sdk/auth.js?${Date.now()}`);
+    const result = await auth.startQrLogin();
     assert.deepEqual(result, {
       qrcodeId: "qr-1",
       qrcodeUrl: "wechat-qr-content",
@@ -29,9 +26,6 @@ test("startQrLogin returns qr code payload", async () => {
 });
 
 test("waitForQrScan saves account after confirmation", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "wmsg-login-"));
-  process.env.WECHAT_MESSAGE_DATA_DIR = dir;
-
   const originalFetch = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = (async () => {
@@ -53,15 +47,10 @@ test("waitForQrScan saves account after confirmation", async () => {
   }) as typeof fetch;
 
   try {
-    const login = await import(`../src/login.js?${Date.now()}`);
-    const account = await login.waitForQrScan("qr-1", 0);
+    const auth = await import(`../src/sdk/auth.js?${Date.now()}`);
+    const account = await auth.waitForQrScan("qr-1", 0);
     assert.equal(account.accountId, "bot-1");
-
-    const accountModule = await import(`../src/account.js?${Date.now()}`);
-    const latest = accountModule.loadLatestAccount();
-    assert.equal(latest?.botToken, "token-1");
   } finally {
     globalThis.fetch = originalFetch;
-    delete process.env.WECHAT_MESSAGE_DATA_DIR;
   }
 });
