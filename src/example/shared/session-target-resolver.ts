@@ -1,4 +1,4 @@
-import type { ClawbotClient, MessageItem, WeixinMessage } from "../sdk/index.js";
+import type { ClawbotClient, MessageItem, WeixinMessage } from "../../sdk/index.js";
 import { loadConversationState, saveConversationState, type ConversationState } from "./conversation-state-store.js";
 
 export interface SessionTarget {

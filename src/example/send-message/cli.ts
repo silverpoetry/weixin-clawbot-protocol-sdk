@@ -1,11 +1,11 @@
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import qrcodeTerminal from "qrcode-terminal";
-import { ClawbotClient, sendTextMessage, startQrLogin, waitForQrScan } from "../sdk/index.js";
-import { loadConfig } from "./config.js";
-import { saveAccount, loadLatestAccount } from "./account-store.js";
-import { resolveLatestSessionTarget } from "./session-target-resolver.js";
-import { loadConversationState } from "./conversation-state-store.js";
+import { ClawbotClient, sendTextMessage, startQrLogin, waitForQrScan } from "../../sdk/index.js";
+import { loadConfig } from "../shared/config.js";
+import { saveAccount, loadLatestAccount } from "../shared/account-store.js";
+import { resolveLatestSessionTarget } from "../shared/session-target-resolver.js";
+import { loadConversationState } from "../shared/conversation-state-store.js";
 
 export interface CliOptions {
   command?: string;
@@ -67,7 +67,7 @@ export async function runCli(argv: string[]): Promise<void> {
   const config = loadConfig();
   const account = loadLatestAccount();
   if (!account) {
-    throw new Error("No bound account found. Run `node dist/src/example/cli.js setup` first.");
+    throw new Error("No bound account found. Run `node dist/src/example/send-message/cli.js setup` first.");
   }
 
   const client = new ClawbotClient(account.botToken, account.baseUrl || config.baseUrl);

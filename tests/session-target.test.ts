@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveLatestSessionTarget } from "../src/example/session-target-resolver.js";
-import type { ConversationState } from "../src/example/conversation-state-store.js";
+import { resolveLatestSessionTarget } from "../src/example/shared/session-target-resolver.js";
+import type { ConversationState } from "../src/example/shared/conversation-state-store.js";
 
 test("resolveLatestSessionTarget returns latest inbound message target", async () => {
   let saved: ConversationState | undefined;

@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { getStateDir } from "../shared/constants.js";
-import { loadJson, saveJson } from "../shared/store.js";
+import { getStateDir } from "../../shared/constants.js";
+import { loadJson, saveJson } from "../../shared/store.js";
 
 export interface ConversationState {
   toUserId?: string;

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseArgs } from "../src/example/cli.js";
+import { parseArgs } from "../src/example/send-message/cli.js";
 
 test("parseArgs extracts to text and context options", () => {
   const options = parseArgs([

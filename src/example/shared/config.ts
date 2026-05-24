@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { DEFAULT_BASE_URL, getDataDir } from "../shared/constants.js";
+import { DEFAULT_BASE_URL, getDataDir } from "../../shared/constants.js";
 
 export interface AppConfig {
   toUserId: string;

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, validateBaseUrl } from "../src/example/config.js";
+import { loadConfig, validateBaseUrl } from "../src/example/shared/config.js";
 
 test("loadConfig reads values from .env file", () => {
   const dir = mkdtempSync(join(tmpdir(), "wmsg-config-"));

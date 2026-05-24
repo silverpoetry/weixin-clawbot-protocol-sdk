@@ -1,8 +1,8 @@
 import { join } from "node:path";
 import { readdirSync, statSync } from "node:fs";
-import { getAccountsDir, DEFAULT_BASE_URL } from "../shared/constants.js";
-import { loadJson, saveJson } from "../shared/store.js";
-import type { LoginAccount } from "../sdk/auth.js";
+import { getAccountsDir, DEFAULT_BASE_URL } from "../../shared/constants.js";
+import { loadJson, saveJson } from "../../shared/store.js";
+import type { LoginAccount } from "../../sdk/auth.js";
 
 export interface AccountData extends LoginAccount {}
 

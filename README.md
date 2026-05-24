@@ -2,7 +2,7 @@
 
 一个不依赖 OpenClaw 的轻量级 Weixin ClawBot 协议 SDK。
 
-项目目标不是复刻 OpenClaw 宿主，而是把官方插件和实际抓到的协议行为中可独立使用的能力，整理成一个更轻量、可嵌入、可测试的 SDK，并提供一个文件状态驱动的示例应用。
+项目目标不是复刻 OpenClaw 宿主，而是把官方插件和实际抓到的协议行为中可独立使用的能力，整理成一个更轻量、可嵌入、可测试的 SDK，并提供几个文件状态驱动的示例应用。
 
 ## 1. 定位与功能
 
@@ -24,13 +24,14 @@
 - 启停通知 `notifystart` / `notifystop`
 - 较完整的消息和媒体协议类型定义
 
-当前项目还包含一个示例应用，用来演示：
+当前项目还包含两个示例应用，用来演示：
 
 - 登录后如何保存账号信息
 - 如何维护最近一次可用的 `toUserId`
 - 如何维护最近一次可用的 `context_token`
 - 如何维护 `get_updates_buf`
 - 如何实现“发送前先拉新消息，有则更新，无则复用”的发送策略
+- 如何把 Codex hooks 事件转发到微信
 
 ## 2. 微信接口与流程分析
 
@@ -142,11 +143,16 @@ src/
 │   ├── constants.ts
 │   └── store.ts
 └── example/
-    ├── account-store.ts
-    ├── cli.ts
-    ├── config.ts
-    ├── conversation-state-store.ts
-    └── session-target-resolver.ts
+    ├── codex-hook/
+    │   ├── cli.ts
+    │   └── index.ts
+    ├── send-message/
+    │   └── cli.ts
+    └── shared/
+        ├── account-store.ts
+        ├── config.ts
+        ├── conversation-state-store.ts
+        └── session-target-resolver.ts
 ```
 
 ### SDK 层
@@ -179,7 +185,16 @@ src/
 
 `src/example/` 是示例应用，不是 SDK 的一部分。
 
-它演示一个最小实用策略：
+其中：
+
+- `send-message/`
+  第一个“会话型发消息”示例
+- `codex-hook/`
+  Codex 通知转发示例
+- `shared/`
+  两个示例共用的账号、配置、会话状态逻辑
+
+第一个示例演示一个最小实用策略：
 
 1. 登录后把账号落盘
 2. 发送前先调用 `getupdates`
@@ -187,6 +202,14 @@ src/
    更新本地 `toUserId/context_token/get_updates_buf`
 4. 如果没有新消息：
    复用本地保存的上次会话状态
+5. 再调用 `sendmessage`
+
+第二个示例演示一个 Codex hook 转发器：
+
+1. 从 Codex hooks 的标准输入读取官方 JSON 事件
+2. 解析官方公共字段和常见事件字段
+3. 格式化成适合微信的文本
+4. 复用最近一次会话目标或显式配置的 `toUserId/context_token`
 5. 再调用 `sendmessage`
 
 默认数据落盘位置：
@@ -217,7 +240,7 @@ npm install
 先扫码登录：
 
 ```bash
-node dist/src/example/cli.js setup
+node dist/src/example/send-message/cli.js setup
 ```
 
 然后发送：
@@ -229,8 +252,121 @@ npm run send
 也可以显式指定目标和文本：
 
 ```bash
-node dist/src/example/cli.js --to <user-id> --context <context-token> --text hello
+node dist/src/example/send-message/cli.js --to <user-id> --context <context-token> --text hello
 ```
+
+## Codex Hook 示例
+
+先完成一次绑定：
+
+```bash
+node dist/src/example/send-message/cli.js setup
+```
+
+然后可以先手工验证一条通知：
+
+```bash
+npm run build
+npm run codex-hook -- --text "Codex 需要你回来继续回答"
+```
+
+这个示例的目标选择策略是：
+
+- 如果同时提供了 `WECHAT_TO_USER_ID` 和 `WECHAT_CONTEXT_TOKEN`
+  则优先使用它们
+- 否则复用示例一里保存的最近一次会话状态
+
+也就是说，最稳妥的使用方式仍然是：
+
+1. 先让微信里有人给 bot 发过消息
+2. 让示例保存下可用的 `toUserId/context_token`
+3. 再让 Codex hook 走这个转发脚本
+
+这个 hook 示例按官方 Codex hooks 文档来设计：
+
+- Codex 会通过 `stdin` 传入一个 JSON 对象
+- 公共字段包括 `hook_event_name`、`session_id`、`transcript_path`、`cwd`、`model`
+- 常见事件包括：
+  - `PermissionRequest`
+  - `PostToolUse`
+  - `Stop`
+  - `SubagentStart`
+  - `SubagentStop`
+  - `UserPromptSubmit`
+
+这个示例也支持把纯文本直接喂给它做手工测试：
+
+```bash
+echo "{\"hook_event_name\":\"Stop\",\"last_assistant_message\":\"All checks passed\"}" | node dist/src/example/codex-hook/cli.js
+```
+
+推荐在 Codex 配置里监听这些事件：
+
+- `PermissionRequest`
+  适合“需要确认”
+- `UserPromptSubmit`
+  适合“用户刚发来新输入”
+- `PostToolUse`
+  适合“某个工具刚执行完”
+- `Stop`
+  适合“本轮/本次运行完成”
+- `SubagentStop`
+  适合“子代理完成”
+
+`Stop` / `SubagentStop` 这类事件在官方协议里要求 hook 向 `stdout` 返回结构化 JSON。本示例已经兼容这一点，所以可以直接作为命令型 hook 使用。
+
+你可以把 Codex 的 hook 命令指向：
+
+```bash
+node /absolute/path/to/dist/src/example/codex-hook/cli.js
+```
+
+例如在 `~/.codex/config.toml` 中：
+
+```toml
+[[hooks.PermissionRequest]]
+[[hooks.PermissionRequest.hooks]]
+type = "command"
+command = 'node "C:\\Users\\weich\\Desktop\\weixin-clawbot-protocol-sdk\\dist\\src\\example\\codex-hook\\cli.js"'
+timeout = 10
+statusMessage = "Forwarding Codex approval request to WeChat"
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = 'node "C:\\Users\\weich\\Desktop\\weixin-clawbot-protocol-sdk\\dist\\src\\example\\codex-hook\\cli.js"'
+timeout = 10
+statusMessage = "Forwarding Codex user prompt to WeChat"
+
+[[hooks.PostToolUse]]
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = 'node "C:\\Users\\weich\\Desktop\\weixin-clawbot-protocol-sdk\\dist\\src\\example\\codex-hook\\cli.js"'
+timeout = 10
+statusMessage = "Forwarding Codex tool event to WeChat"
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = 'node "C:\\Users\\weich\\Desktop\\weixin-clawbot-protocol-sdk\\dist\\src\\example\\codex-hook\\cli.js"'
+timeout = 10
+statusMessage = "Forwarding Codex stop event to WeChat"
+
+[[hooks.SubagentStop]]
+[[hooks.SubagentStop.hooks]]
+type = "command"
+command = 'node "C:\\Users\\weich\\Desktop\\weixin-clawbot-protocol-sdk\\dist\\src\\example\\codex-hook\\cli.js"'
+timeout = 10
+statusMessage = "Forwarding Codex subagent stop to WeChat"
+```
+
+它会把事件自动归类成：
+
+- 需要回复
+- 需要确认
+- 已完成
+- 异常
+- 普通通知
 
 ## 开发
 
