@@ -7,7 +7,8 @@
     "build": "tsc",
     "test": "npm run build && node --test dist/tests/*.test.js",
     "send": "node dist/src/example/send-message/cli.js",
-    "codex-hook": "node dist/src/example/codex-hook/cli.js"
+    "codex-hook": "node dist/src/example/codex-hook/cli.js",
+    "reply-bridge": "node dist/src/example/reply-bridge/cli.js"
   },
   "dependencies": {
     "qrcode-terminal": "^0.12.0"

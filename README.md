@@ -368,6 +368,50 @@ statusMessage = "Forwarding Codex subagent stop to WeChat"
 - 异常
 - 普通通知
 
+## 微信回复回灌示例
+
+第三个示例用于把微信里的新回复回灌到指定 Codex 线程。
+
+用途：
+
+1. 指定一个 `threadId`
+2. 指定一个存活时间窗口
+3. 在这个窗口内持续轮询微信新消息
+4. 如果发现“启动之后才出现的新文本消息”
+   就把这条文本作为用户输入回灌到指定 Codex 线程
+5. 回灌成功后立即退出
+
+示例：
+
+```bash
+npm run reply-bridge -- --thread <codex-thread-id> --alive-seconds 300 --poll-ms 5000
+```
+
+可选参数：
+
+- `--thread`
+  必填，目标 Codex 线程 ID
+- `--to`
+  只监听指定微信用户的回复
+- `--alive-seconds`
+  最长监听时长，默认 `300`
+- `--poll-ms`
+  轮询间隔，默认 `5000`
+
+这个示例当前的判定逻辑是：
+
+- 只接受脚本启动后产生的新消息
+- 只接受文本消息
+- 命中第一条合格回复后，调用 Codex app-server 的 `turn/start`
+- 然后退出
+
+注意：
+
+- 这个示例不会一直常驻
+- 它更适合配合 `Stop` 或手工启动使用
+- Windows 下这里不是连接常驻 daemon，而是每次临时拉起一个真实的本地 `codex.exe app-server --listen stdio://` 进程完成回灌
+- 要让回灌和微信通知一一对应，后续最好再补一个更稳定的线程映射标识
+
 ## 开发
 
 ```bash
