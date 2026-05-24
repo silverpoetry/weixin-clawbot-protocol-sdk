@@ -1,6 +1,6 @@
-# Weixin Clawbot SDK
+# Weixin Clawbot Protocol SDK
 
-一个不依赖 OpenClaw 的轻量级 WeChat ClawBot 协议 SDK。
+一个不依赖 OpenClaw 的轻量级 Weixin ClawBot 协议 SDK。
 
 项目目标不是复刻 OpenClaw 宿主，而是把官方插件和实际抓到的协议行为中可独立使用的能力，整理成一个更轻量、可嵌入、可测试的 SDK，并提供一个文件状态驱动的示例应用。
 

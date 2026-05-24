@@ -1,7 +1,7 @@
 {
-  "name": "weixinmessage",
+  "name": "weixin-clawbot-protocol-sdk",
   "version": "1.0.0",
-  "description": "Lightweight WeChat ClawBot protocol SDK with a file-backed example app",
+  "description": "Standalone Weixin ClawBot protocol SDK with a file-backed example app",
   "type": "module",
   "scripts": {
     "build": "tsc",
