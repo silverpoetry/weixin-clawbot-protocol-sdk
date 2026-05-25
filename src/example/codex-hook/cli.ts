@@ -1,17 +1,17 @@
 import process from "node:process";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { ClawbotClient } from "../../sdk/index.js";
 import { loadLatestAccount } from "../shared/account-store.js";
 import {
   buildManualCodexHookNotification,
   extractCodexHookNotification,
   formatCodexHookNotification,
-  forwardCodexHookNotification,
   parseCodexHookInput,
   type HookTarget,
 } from "./index.js";
 import { loadConfig, loadDotEnv } from "../shared/config.js";
-import { resolveLatestSessionTarget } from "../shared/session-target-resolver.js";
+import { loadStoredSessionTarget } from "../shared/session-target-resolver.js";
+import { enqueueDaemonInbox, isDaemonRunning } from "./daemon-store.js";
 
 export interface CodexHookCliOptions {
   to?: string;
@@ -89,7 +89,6 @@ export function parseCodexHookArgs(argv: string[]): CodexHookCliOptions {
 }
 
 async function resolveHookTarget(
-  client: Pick<ClawbotClient, "getUpdates">,
   options: CodexHookCliOptions,
 ): Promise<HookTarget> {
   const dotEnv = loadDotEnv();
@@ -111,24 +110,27 @@ async function resolveHookTarget(
     );
   }
 
-  const target = await resolveLatestSessionTarget(client);
+  const target = loadStoredSessionTarget();
+  if (!target) {
+    throw new Error("No stored WeChat conversation found. Send a message to the bound bot first, then retry.");
+  }
+
   return {
     toUserId: target.toUserId,
     contextToken: target.contextToken,
-    source: "session",
+    source: "stored",
   };
 }
 
 export async function runCodexHookCli(argv: string[]): Promise<void> {
   const options = parseCodexHookArgs(argv);
-  const config = loadConfig();
+  loadConfig();
   const account = loadLatestAccount();
   if (!account) {
     throw new Error("No bound account found. Run `node dist/src/example/send-message/cli.js setup` first.");
   }
 
-  const client = new ClawbotClient(account.botToken, account.baseUrl || config.baseUrl);
-  const target = await resolveHookTarget(client, options);
+  const target = await resolveHookTarget(options);
 
   if (options.text) {
     const text = formatCodexHookNotification(buildManualCodexHookNotification(options.text));
@@ -137,17 +139,25 @@ export async function runCodexHookCli(argv: string[]): Promise<void> {
       return;
     }
 
-    await forwardCodexHookNotification({
+    if (!isDaemonRunning()) {
+      process.stderr.write("Codex hook daemon is not running; dropped manual notification.\n");
+      return;
+    }
+
+    enqueueDaemonInbox({
+      id: randomUUID(),
+      type: "codex-hook",
+      createdAt: new Date().toISOString(),
+      deliverUntil: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       rawInput: JSON.stringify({
         type: "manual",
         message: options.text,
       }),
-      client,
       accountId: account.accountId,
       target,
     });
 
-    process.stderr.write(`Forwarded manual Codex notification to ${target.toUserId}\n`);
+    process.stderr.write(`Submitted manual Codex notification for ${target.toUserId}\n`);
     return;
   }
 
@@ -161,9 +171,24 @@ export async function runCodexHookCli(argv: string[]): Promise<void> {
     return;
   }
 
-  const { notification } = await forwardCodexHookNotification({
+  const notification = extractCodexHookNotification(parsedInput);
+  if (!isDaemonRunning()) {
+    const hookOutput = buildHookOutput(parsedInput);
+    if (hookOutput) {
+      process.stdout.write(`${hookOutput}\n`);
+    }
+    process.stderr.write(
+      `Codex hook daemon is not running; dropped notification for ${target.toUserId} (${notification.eventType || "unknown"}, ${notification.inferredKind}, ${target.source})\n`,
+    );
+    return;
+  }
+
+  enqueueDaemonInbox({
+    id: randomUUID(),
+    type: "codex-hook",
+    createdAt: new Date().toISOString(),
+    deliverUntil: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     rawInput,
-    client,
     accountId: account.accountId,
     target,
   });
@@ -174,7 +199,7 @@ export async function runCodexHookCli(argv: string[]): Promise<void> {
   }
 
   process.stderr.write(
-    `Forwarded Codex notification to ${target.toUserId} (${notification.eventType || "unknown"}, ${notification.inferredKind}, ${target.source})\n`,
+    `Submitted Codex notification for ${target.toUserId} (${notification.eventType || "unknown"}, ${notification.inferredKind}, ${target.source})\n`,
   );
 }
 

@@ -1,4 +1,4 @@
-export { ClawbotClient } from "./client.js";
+export { ClawbotApiError, ClawbotClient } from "./client.js";
 export type { ClawbotClientOptions } from "./client.js";
 export { buildSendTextRequest, sendTextMessage } from "./messages.js";
 export { startQrLogin, waitForQrScan } from "./auth.js";

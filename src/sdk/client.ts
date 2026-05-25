@@ -20,6 +20,23 @@ function generateUin(): string {
 export interface ClawbotClientOptions {
   botAgent?: string;
   channelVersion?: string;
+  fetchImpl?: typeof fetch;
+}
+
+export class ClawbotApiError extends Error {
+  readonly path: string;
+  readonly response: { ret?: number; errcode?: number; errmsg?: string; retmsg?: string };
+
+  constructor(
+    path: string,
+    response: { ret?: number; errcode?: number; errmsg?: string; retmsg?: string },
+    message: string,
+  ) {
+    super(message);
+    this.name = "ClawbotApiError";
+    this.path = path;
+    this.response = response;
+  }
 }
 
 export class ClawbotClient {
@@ -28,6 +45,7 @@ export class ClawbotClient {
   private readonly uin: string;
   private readonly botAgent?: string;
   private readonly channelVersion?: string;
+  private readonly fetchImpl: typeof fetch;
 
   constructor(token: string, baseUrl: string, options: ClawbotClientOptions = {}) {
     this.token = token;
@@ -35,6 +53,7 @@ export class ClawbotClient {
     this.uin = generateUin();
     this.botAgent = options.botAgent;
     this.channelVersion = options.channelVersion;
+    this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
   headers(): Record<string, string> {
@@ -58,7 +77,7 @@ export class ClawbotClient {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(`${this.baseUrl}/${path}`, {
+      const response = await this.fetchImpl(`${this.baseUrl}/${path}`, {
         method: "POST",
         headers: this.headers(),
         body: JSON.stringify(body),
@@ -82,10 +101,20 @@ export class ClawbotClient {
   }
 
   private ensureSuccess(path: string, response: { ret?: number; errcode?: number; errmsg?: string; retmsg?: string }): void {
-    const failureCode = typeof response.ret === "number" && response.ret !== 0 ? response.ret : response.errcode;
-    if (failureCode !== undefined && failureCode !== 0) {
-      const message = response.retmsg || response.errmsg;
-      throw new Error(`${path} failed with ret=${failureCode}${message ? `, message=${message}` : ""}`);
+    const hasErrcodeFailure = typeof response.errcode === "number" && response.errcode !== 0;
+    const hasRetFailure = typeof response.ret === "number" && response.ret !== 0;
+    if (hasErrcodeFailure || hasRetFailure) {
+      const codeLabel = hasErrcodeFailure ? "errcode" : "ret";
+      const codeValue = hasErrcodeFailure ? response.errcode : response.ret;
+      const messageLabel = hasErrcodeFailure ? "errmsg" : response.retmsg ? "retmsg" : "errmsg";
+      const messageValue = hasErrcodeFailure
+        ? response.errmsg || response.retmsg
+        : response.retmsg || response.errmsg;
+      throw new ClawbotApiError(
+        path,
+        response,
+        `${path} failed with ${codeLabel}=${codeValue}${messageValue ? `, ${messageLabel}=${messageValue}` : ""}`,
+      );
     }
   }
 
@@ -105,13 +134,17 @@ export class ClawbotClient {
   }
 
   async sendMessage(req: SendMessageReq, timeoutMs = 15_000): Promise<SendMessageResp> {
-    const response = await this.postJson<SendMessageResp>(
+    const response = await this.sendMessageRaw(req, timeoutMs);
+    this.ensureSuccess("sendmessage", response);
+    return response;
+  }
+
+  async sendMessageRaw(req: SendMessageReq, timeoutMs = 15_000): Promise<SendMessageResp> {
+    return this.postJson<SendMessageResp>(
       "ilink/bot/sendmessage",
       { ...req, base_info: this.baseInfo() },
       timeoutMs,
     );
-    this.ensureSuccess("sendmessage", response);
-    return response;
   }
 
   async getUploadUrl(req: GetUploadUrlReq, timeoutMs = 15_000): Promise<GetUploadUrlResp> {

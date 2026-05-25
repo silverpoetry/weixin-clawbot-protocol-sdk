@@ -144,6 +144,7 @@ export interface SendMessageReq {
 
 export interface SendMessageResp {
   ret?: number;
+  errcode?: number;
   errmsg?: string;
   retmsg?: string;
 }
@@ -167,6 +168,7 @@ export interface GetUploadUrlResp {
   thumb_upload_param?: string;
   upload_full_url?: string;
   ret?: number;
+  errcode?: number;
   errmsg?: string;
   retmsg?: string;
 }
@@ -179,12 +181,14 @@ export interface SendTypingReq {
 
 export interface SendTypingResp {
   ret?: number;
+  errcode?: number;
   errmsg?: string;
   retmsg?: string;
 }
 
 export interface GetConfigResp {
   ret?: number;
+  errcode?: number;
   errmsg?: string;
   retmsg?: string;
   typing_ticket?: string;
@@ -192,12 +196,14 @@ export interface GetConfigResp {
 
 export interface NotifyStopResp {
   ret?: number;
+  errcode?: number;
   errmsg?: string;
   retmsg?: string;
 }
 
 export interface NotifyStartResp {
   ret?: number;
+  errcode?: number;
   errmsg?: string;
   retmsg?: string;
 }

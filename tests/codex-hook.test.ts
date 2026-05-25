@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   extractCodexHookNotification,
   formatCodexHookNotification,
@@ -7,6 +10,7 @@ import {
   parseCodexHookInput,
 } from "../src/example/codex-hook/index.js";
 import { parseCodexHookArgs } from "../src/example/codex-hook/cli.js";
+import { enqueueDaemonInbox, isDaemonRunning } from "../src/example/codex-hook/daemon-store.js";
 
 test("parseCodexHookArgs extracts explicit hook options", () => {
   const options = parseCodexHookArgs([
@@ -160,4 +164,28 @@ test("forwardCodexHookNotification sends formatted text through sdk client", asy
   assert.equal(request.msg?.to_user_id, "user-1");
   assert.equal(request.msg?.context_token, "ctx-1");
   assert.match(request.msg?.item_list?.[0]?.text_item?.text || "", /^\[Codex需要回复\]/);
+});
+
+test("hook daemon inbox accepts queue items", () => {
+  const dir = mkdtempSync(join(tmpdir(), "wmsg-hook-daemon-"));
+  process.env.WECHAT_MESSAGE_DATA_DIR = dir;
+
+  const path = enqueueDaemonInbox({
+    id: "task-1",
+    createdAt: "2026-05-25T00:00:00.000Z",
+    deliverUntil: "2026-05-25T00:10:00.000Z",
+    rawInput: JSON.stringify({ hook_event_name: "Stop" }),
+    accountId: "bot-1",
+    target: {
+      toUserId: "user-1",
+      contextToken: "ctx-1",
+      source: "stored",
+    },
+    type: "codex-hook",
+  });
+
+  assert.match(path, /codex-hook-daemon/);
+  assert.equal(isDaemonRunning(), false);
+
+  delete process.env.WECHAT_MESSAGE_DATA_DIR;
 });

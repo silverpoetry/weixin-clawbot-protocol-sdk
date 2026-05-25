@@ -23,7 +23,7 @@ export interface CodexHookNotification {
 export interface HookTarget {
   toUserId: string;
   contextToken: string;
-  source: "configured" | "session";
+  source: "configured" | "session" | "stored";
 }
 
 export interface ForwardCodexHookOptions {

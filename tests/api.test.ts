@@ -63,3 +63,29 @@ test("WeChatApi throws when sendmessage ret is non-zero", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("WeChatApi prefers errcode and errmsg when present", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ ret: -2, errcode: -14, errmsg: "session timeout" }), { status: 200 })) as typeof fetch;
+
+  try {
+    const client = new ClawbotClient("token-1", "https://ilinkai.weixin.qq.com");
+    await assert.rejects(
+      client.sendMessage({
+        msg: {
+          from_user_id: "bot-1",
+          to_user_id: "clawbot",
+          client_id: "client-1",
+          message_type: 2,
+          message_state: 2,
+          context_token: "",
+          item_list: [],
+        },
+      }),
+      /errcode=-14, errmsg=session timeout/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

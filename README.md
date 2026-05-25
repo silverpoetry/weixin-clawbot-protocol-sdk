@@ -31,7 +31,7 @@
 - 如何维护最近一次可用的 `context_token`
 - 如何维护 `get_updates_buf`
 - 如何实现“发送前先拉新消息，有则更新，无则复用”的发送策略
-- 如何把 Codex hooks 事件转发到微信
+- 如何通过本地后台进程把 Codex 与微信、Codex Desktop 串起来
 
 ## 2. 微信接口与流程分析
 
@@ -145,7 +145,15 @@ src/
 └── example/
     ├── codex-hook/
     │   ├── cli.ts
+    │   ├── daemon-store.ts
+    │   ├── daemon.ts
     │   └── index.ts
+    ├── wechat-automation/
+    │   ├── cli.ts
+    │   └── skill_cli.py
+    ├── codex-desktop-automation/
+    │   ├── cli.ts
+    │   └── skill_cli.py
     ├── send-message/
     │   └── cli.ts
     └── shared/
@@ -190,7 +198,11 @@ src/
 - `send-message/`
   第一个“会话型发消息”示例
 - `codex-hook/`
-  Codex 通知转发示例
+  Codex/微信/Codex Desktop 的本地后台桥接
+- `wechat-automation/`
+  本机微信窗口自动化发送
+- `codex-desktop-automation/`
+  Codex Desktop 窗口自动化发送
 - `shared/`
   两个示例共用的账号、配置、会话状态逻辑
 
@@ -204,13 +216,16 @@ src/
    复用本地保存的上次会话状态
 5. 再调用 `sendmessage`
 
-第二个示例演示一个 Codex hook 转发器：
+第二个示例现在是两段式结构：
 
-1. 从 Codex hooks 的标准输入读取官方 JSON 事件
-2. 解析官方公共字段和常见事件字段
-3. 格式化成适合微信的文本
-4. 复用最近一次会话目标或显式配置的 `toUserId/context_token`
-5. 再调用 `sendmessage`
+1. `codex-hook/cli.ts`
+   只负责接收 Codex hook 输入，并把任务投递给本地 daemon
+2. `codex-hook/daemon.ts`
+   常驻负责：
+   - 把 Codex 事件发到微信
+   - `context_token` 失效时自动发 `"1"` 刷新会话
+   - 从微信收新消息并转发到 Codex Desktop
+   - 丢弃刷新控制消息 `"1"`，不把它送入 Codex
 
 默认数据落盘位置：
 
@@ -263,6 +278,12 @@ node dist/src/example/send-message/cli.js --to <user-id> --context <context-toke
 node dist/src/example/send-message/cli.js setup
 ```
 
+先启动本地后台：
+
+```bash
+npm run codex-hook-daemon -- --poll-ms 1000
+```
+
 然后可以先手工验证一条通知：
 
 ```bash
@@ -270,7 +291,7 @@ npm run build
 npm run codex-hook -- --text "Codex 需要你回来继续回答"
 ```
 
-这个示例的目标选择策略是：
+`codex-hook` 这个薄客户端的目标选择策略是：
 
 - 如果同时提供了 `WECHAT_TO_USER_ID` 和 `WECHAT_CONTEXT_TOKEN`
   则优先使用它们
@@ -282,7 +303,7 @@ npm run codex-hook -- --text "Codex 需要你回来继续回答"
 2. 让示例保存下可用的 `toUserId/context_token`
 3. 再让 Codex hook 走这个转发脚本
 
-这个 hook 示例按官方 Codex hooks 文档来设计：
+这个 hook 输入解析仍按官方 Codex hooks 文档来设计：
 
 - Codex 会通过 `stdin` 传入一个 JSON 对象
 - 公共字段包括 `hook_event_name`、`session_id`、`transcript_path`、`cwd`、`model`
@@ -300,7 +321,7 @@ npm run codex-hook -- --text "Codex 需要你回来继续回答"
 echo "{\"hook_event_name\":\"Stop\",\"last_assistant_message\":\"All checks passed\"}" | node dist/src/example/codex-hook/cli.js
 ```
 
-推荐在 Codex 配置里监听这些事件：
+当前更推荐监听这些事件：
 
 - `PermissionRequest`
   适合“需要确认”
@@ -356,7 +377,7 @@ npm run wechat-automation-send
 - `WECHAT_HOOK_REACTIVATE_TO` 用于 `codex-hook` 在 `context_token` 失效时自动发一条激活消息；未设置时会回退到 `WECHAT_AUTOMATION_TO`，再回退到 `微信ClawBot`
 - `WECHAT_HOOK_REACTIVATE_TEXT` 默认为 `1`，支持 `{toUserId}` 和 `{contextToken}` 模板变量
 
-你可以把 Codex 的 hook 命令指向：
+Codex 的 hook 命令应指向：
 
 ```bash
 node /absolute/path/to/dist/src/example/codex-hook/cli.js
@@ -365,108 +386,36 @@ node /absolute/path/to/dist/src/example/codex-hook/cli.js
 例如在 `~/.codex/config.toml` 中：
 
 ```toml
-[[hooks.PermissionRequest]]
-[[hooks.PermissionRequest.hooks]]
-type = "command"
-command = 'node "C:\\Users\\weich\\Desktop\\weixin-clawbot-protocol-sdk\\dist\\src\\example\\codex-hook\\cli.js"'
-timeout = 10
-statusMessage = "Forwarding Codex approval request to WeChat"
-
-[[hooks.UserPromptSubmit]]
-[[hooks.UserPromptSubmit.hooks]]
-type = "command"
-command = 'node "C:\\Users\\weich\\Desktop\\weixin-clawbot-protocol-sdk\\dist\\src\\example\\codex-hook\\cli.js"'
-timeout = 10
-statusMessage = "Forwarding Codex user prompt to WeChat"
-
 [[hooks.PostToolUse]]
 [[hooks.PostToolUse.hooks]]
 type = "command"
 command = 'node "C:\\Users\\weich\\Desktop\\weixin-clawbot-protocol-sdk\\dist\\src\\example\\codex-hook\\cli.js"'
 timeout = 10
-statusMessage = "Forwarding Codex tool event to WeChat"
+statusMessage = "Submitting Codex tool event to local hook daemon"
 
 [[hooks.Stop]]
 [[hooks.Stop.hooks]]
 type = "command"
 command = 'node "C:\\Users\\weich\\Desktop\\weixin-clawbot-protocol-sdk\\dist\\src\\example\\codex-hook\\cli.js"'
 timeout = 10
-statusMessage = "Forwarding Codex stop event to WeChat"
-
-[[hooks.SubagentStop]]
-[[hooks.SubagentStop.hooks]]
-type = "command"
-command = 'node "C:\\Users\\weich\\Desktop\\weixin-clawbot-protocol-sdk\\dist\\src\\example\\codex-hook\\cli.js"'
-timeout = 10
-statusMessage = "Forwarding Codex subagent stop to WeChat"
+statusMessage = "Submitting Codex stop event to local hook daemon"
 ```
 
-它会把事件自动归类成：
+实际数据流是：
+
+1. Codex 触发 hook
+2. `codex-hook/cli.ts` 把任务写进本地 daemon inbox
+3. daemon 合并/发送到微信
+4. daemon 必要时自动刷新上下文
+5. daemon 从微信收消息并转发给 Codex Desktop
+
+发到微信的通知文本会自动归类成：
 
 - 需要回复
 - 需要确认
 - 已完成
 - 异常
 - 普通通知
-
-## 微信回复回灌示例
-
-第三个示例用于把微信里的新回复回灌到指定 Codex 线程。
-
-用途：
-
-1. 指定一个 `threadId`
-2. 指定一个存活时间窗口
-3. 在这个窗口内持续轮询微信新消息
-4. 如果发现“启动之后才出现的新文本消息”
-   就把这条文本作为用户输入回灌到指定 Codex 线程
-5. 回灌成功后立即退出
-
-示例：
-
-```bash
-npm run reply-bridge -- --thread <codex-thread-id> --alive-seconds 300 --poll-ms 5000
-```
-
-启动一个新的官方 project thread：
-
-```bash
-npm run reply-project-start -- --cwd "C:\\path\\to\\project" --text "your prompt" --title "resume-probe-noapproval 2026-05-24T17:42:01.493Z"
-```
-
-可选参数：
-
-- `--thread`
-  必填，目标 Codex 线程 ID
-- `--to`
-  只监听指定微信用户的回复
-- `--alive-seconds`
-  最长监听时长，默认 `300`
-- `--poll-ms`
-  轮询间隔，默认 `5000`
-
-`reply-project-start` 可选参数：
-
-- `--cwd`
-  必填，项目目录
-- `--text`
-  必填，首条用户输入
-- `--title`
-  可选，显式设置新 thread 的标题，便于用固定标签区分会话
-
-这个示例当前的判定逻辑是：
-
-- 只接受脚本启动后产生的新消息
-- 只接受文本消息
-- 命中第一条合格回复后，调用 Codex app-server 的 `turn/start`
-- 然后退出
-
-注意：
-
-- 这个示例不会一直常驻
-- 它更适合配合 `Stop` 或手工启动使用
-- Windows 下这里不是连接常驻 daemon，而是每次临时拉起一个真实的本地 `codex.exe app-server --listen stdio://` 进程完成回灌
-- 要让回灌和微信通知一一对应，后续最好再补一个更稳定的线程映射标识
 
 ## Codex 桌面端自动化发送示例
 
