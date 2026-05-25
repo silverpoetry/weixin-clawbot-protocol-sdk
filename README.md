@@ -315,6 +315,47 @@ echo "{\"hook_event_name\":\"Stop\",\"last_assistant_message\":\"All checks pass
 
 `Stop` / `SubagentStop` 这类事件在官方协议里要求 hook 向 `stdout` 返回结构化 JSON。本示例已经兼容这一点，所以可以直接作为命令型 hook 使用。
 
+## 本机微信自动化发送示例
+
+这个示例直接内置了一份“本机微信 UI 自动化发文本”的最小脚本，
+思路参考了 [LAVARONG/wechat-automation-api](https://github.com/LAVARONG/wechat-automation-api)，
+但最终运行不依赖那个仓库，也不依赖它的 HTTP 服务。
+
+前提：
+
+1. 本机已经启动并登录微信 PC 客户端
+2. 本机 Python 环境已安装 `uiautomation` 和 `pyperclip`
+
+示例命令：
+
+```bash
+npm run wechat-automation-send -- --to "你的ClawBot联系人名" --content "你好，这是一条本机微信测试消息"
+```
+
+也支持从 `.env` 或环境变量读取：
+
+```text
+WECHAT_AUTOMATION_TO=你的ClawBot联系人名
+WECHAT_AUTOMATION_CONTENT=你好，这是一条本机微信测试消息
+WECHAT_AUTOMATION_PYTHON=python
+WECHAT_HOOK_REACTIVATE_TO=你的ClawBot联系人名
+WECHAT_HOOK_REACTIVATE_TEXT=1
+```
+
+然后直接执行：
+
+```bash
+npm run wechat-automation-send
+```
+
+注意：
+
+- 这里的 `--to` 不是 `wxid`，而是微信客户端里能被该自动化服务搜索到的联系人显示名
+- 这个 example 默认调用当前仓库内置的 [skill_cli.py](C:\Users\weich\Desktop\weixin-clawbot-protocol-sdk\src\example\wechat-automation\skill_cli.py)
+- 当前只内置了 `sendtext` 能力
+- `WECHAT_HOOK_REACTIVATE_TO` 用于 `codex-hook` 在 `context_token` 失效时自动发一条激活消息；未设置时会回退到 `WECHAT_AUTOMATION_TO`，再回退到 `微信ClawBot`
+- `WECHAT_HOOK_REACTIVATE_TEXT` 默认为 `1`，支持 `{toUserId}` 和 `{contextToken}` 模板变量
+
 你可以把 Codex 的 hook 命令指向：
 
 ```bash
@@ -387,6 +428,12 @@ statusMessage = "Forwarding Codex subagent stop to WeChat"
 npm run reply-bridge -- --thread <codex-thread-id> --alive-seconds 300 --poll-ms 5000
 ```
 
+启动一个新的官方 project thread：
+
+```bash
+npm run reply-project-start -- --cwd "C:\\path\\to\\project" --text "your prompt" --title "resume-probe-noapproval 2026-05-24T17:42:01.493Z"
+```
+
 可选参数：
 
 - `--thread`
@@ -397,6 +444,15 @@ npm run reply-bridge -- --thread <codex-thread-id> --alive-seconds 300 --poll-ms
   最长监听时长，默认 `300`
 - `--poll-ms`
   轮询间隔，默认 `5000`
+
+`reply-project-start` 可选参数：
+
+- `--cwd`
+  必填，项目目录
+- `--text`
+  必填，首条用户输入
+- `--title`
+  可选，显式设置新 thread 的标题，便于用固定标签区分会话
 
 这个示例当前的判定逻辑是：
 
@@ -411,6 +467,34 @@ npm run reply-bridge -- --thread <codex-thread-id> --alive-seconds 300 --poll-ms
 - 它更适合配合 `Stop` 或手工启动使用
 - Windows 下这里不是连接常驻 daemon，而是每次临时拉起一个真实的本地 `codex.exe app-server --listen stdio://` 进程完成回灌
 - 要让回灌和微信通知一一对应，后续最好再补一个更稳定的线程映射标识
+
+## Codex 桌面端自动化发送示例
+
+这个示例不走 `app-server`，而是直接自动化当前前台可见的 Codex Desktop 窗口：
+
+1. 激活 Codex 窗口
+2. 利用默认已在输入框的焦点
+3. 粘贴文本
+4. 回车发送
+
+前提：
+
+1. Codex Desktop 已启动
+2. 当前窗口结构仍然保持“切到前台后默认焦点就在输入框”
+3. 本机 Python 已安装 `uiautomation` 和 `pyperclip`
+
+示例：
+
+```bash
+npm run codex-desktop-send -- --content "这是发给 Codex 桌面端的一条测试消息"
+```
+
+也支持环境变量：
+
+```text
+CODEX_DESKTOP_AUTOMATION_CONTENT=这是发给 Codex 桌面端的一条测试消息
+CODEX_DESKTOP_AUTOMATION_PYTHON=python
+```
 
 ## 开发
 

@@ -7,8 +7,16 @@
     "build": "tsc",
     "test": "npm run build && node --test dist/tests/*.test.js",
     "send": "node dist/src/example/send-message/cli.js",
+    "send-burst": "node dist/src/example/send-message/burst.js",
+    "wechat-automation-send": "node dist/src/example/wechat-automation/cli.js",
+    "codex-desktop-send": "node dist/src/example/codex-desktop-automation/cli.js",
     "codex-hook": "node dist/src/example/codex-hook/cli.js",
-    "reply-bridge": "node dist/src/example/reply-bridge/cli.js"
+    "reply-bridge": "node dist/src/example/reply-bridge/cli.js",
+    "reply-inject": "node dist/src/example/reply-bridge/manual-inject.js",
+    "reply-start": "node dist/src/example/reply-bridge/simple-turn-start.js",
+    "reply-project-start": "node dist/src/example/reply-bridge/project-thread-start.js",
+    "codex-send": "node dist/src/example/reply-bridge/codex-send.js",
+    "reply-sdk-listen": "node dist/src/example/reply-bridge/sdk-listen.js"
   },
   "dependencies": {
     "qrcode-terminal": "^0.12.0"
