@@ -3,10 +3,12 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { loadDotEnv } from "../shared/config.js";
+import { loadDotEnv } from "../../shared/config.js";
 
-export interface CodexDesktopAutomationCliOptions {
+export interface WechatAutomationCliOptions {
+  to?: string;
   content?: string;
+  action: "sendtext" | "sendpic";
   scriptPath?: string;
   pythonCommand?: string;
 }
@@ -19,17 +21,33 @@ function readOptionalValue(
   return env[key] || fileValues[key];
 }
 
-export function parseCodexDesktopAutomationArgs(
-  argv: string[],
-): CodexDesktopAutomationCliOptions {
-  const options: CodexDesktopAutomationCliOptions = {};
+export function parseWechatAutomationArgs(argv: string[]): WechatAutomationCliOptions {
+  const options: WechatAutomationCliOptions = {
+    action: "sendtext",
+  };
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const next = argv[i + 1];
 
+    if (arg === "--to" && next) {
+      options.to = next;
+      i += 1;
+      continue;
+    }
+
     if (arg === "--content" && next) {
       options.content = next;
+      i += 1;
+      continue;
+    }
+
+    if (arg === "--action" && next) {
+      if (next === "sendtext" || next === "sendpic") {
+        options.action = next;
+      } else {
+        throw new Error("Invalid --action. Expected sendtext or sendpic.");
+      }
       i += 1;
       continue;
     }
@@ -52,7 +70,7 @@ export function parseCodexDesktopAutomationArgs(
 function resolveScriptPath(input: string): string {
   const resolved = resolve(input);
   if (!existsSync(resolved)) {
-    throw new Error(`codex-desktop-automation script not found: ${resolved}`);
+    throw new Error(`wechat-automation script not found: ${resolved}`);
   }
 
   return resolved;
@@ -65,8 +83,8 @@ function resolveDefaultScriptPath(): string {
   }
 
   const distDir = dirname(fileURLToPath(import.meta.url));
-  const workspaceRoot = resolve(distDir, "../../../../");
-  const sourceSide = resolve(workspaceRoot, "src/example/codex-desktop-automation/skill_cli.py");
+  const workspaceRoot = resolve(distDir, "../../../../../");
+  const sourceSide = resolve(workspaceRoot, "src/example/codex-hook/automation-wechat/skill_cli.py");
   if (existsSync(sourceSide)) {
     return sourceSide;
   }
@@ -74,30 +92,40 @@ function resolveDefaultScriptPath(): string {
   return distSide;
 }
 
-export async function runCodexDesktopAutomationCli(argv: string[]): Promise<void> {
-  const options = parseCodexDesktopAutomationArgs(argv);
+export async function runWechatAutomationCli(argv: string[]): Promise<void> {
+  const options = parseWechatAutomationArgs(argv);
   const dotEnv = loadDotEnv();
 
+  const to =
+    options.to || readOptionalValue(process.env, dotEnv, "WECHAT_AUTOMATION_TO");
   const content =
     options.content ||
-    readOptionalValue(process.env, dotEnv, "CODEX_DESKTOP_AUTOMATION_CONTENT") ||
-    `Codex desktop test ${new Date().toISOString()}`;
+    readOptionalValue(process.env, dotEnv, "WECHAT_AUTOMATION_CONTENT") ||
+    `ClawBot test ${new Date().toISOString()}`;
   const pythonCommand =
     options.pythonCommand ||
-    readOptionalValue(process.env, dotEnv, "CODEX_DESKTOP_AUTOMATION_PYTHON") ||
+    readOptionalValue(process.env, dotEnv, "WECHAT_AUTOMATION_PYTHON") ||
     "python";
   const scriptPath = resolveScriptPath(
     options.scriptPath ||
-      readOptionalValue(process.env, dotEnv, "CODEX_DESKTOP_AUTOMATION_SCRIPT_PATH") ||
+      readOptionalValue(process.env, dotEnv, "WECHAT_AUTOMATION_SCRIPT_PATH") ||
       resolveDefaultScriptPath(),
   );
+
+  if (!to) {
+    throw new Error("Missing WeChat target contact. Pass --to or set WECHAT_AUTOMATION_TO.");
+  }
 
   const child = spawn(
     pythonCommand,
     [
       scriptPath,
+      "--to",
+      to,
       "--content",
       content,
+      "--action",
+      options.action,
     ],
     {
       stdio: ["ignore", "pipe", "pipe"],
@@ -122,11 +150,11 @@ export async function runCodexDesktopAutomationCli(argv: string[]): Promise<void
 
   if (exitCode !== 0) {
     throw new Error(
-      `codex-desktop-automation send failed with exit code ${exitCode}: ${stderr.trim() || stdout.trim() || "unknown error"}`,
+      `wechat-automation send failed with exit code ${exitCode}: ${stderr.trim() || stdout.trim() || "unknown error"}`,
     );
   }
 
-  process.stdout.write(stdout || "Sent message to Codex desktop\n");
+  process.stdout.write(stdout || `Sent ${options.action} to ${to}\n`);
 }
 
 const isDirectRun = process.argv[1]
@@ -134,7 +162,7 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
-  runCodexDesktopAutomationCli(process.argv.slice(2)).catch((error) => {
+  runWechatAutomationCli(process.argv.slice(2)).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`${message}\n`);
     process.exitCode = 1;

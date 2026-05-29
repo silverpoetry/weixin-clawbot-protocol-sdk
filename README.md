@@ -147,13 +147,13 @@ src/
     │   ├── cli.ts
     │   ├── daemon-store.ts
     │   ├── daemon.ts
+    │   ├── automation-wechat/
+    │   │   ├── cli.ts
+    │   │   └── skill_cli.py
+    │   ├── automation-codex-desktop/
+    │   │   ├── cli.ts
+    │   │   └── skill_cli.py
     │   └── index.ts
-    ├── wechat-automation/
-    │   ├── cli.ts
-    │   └── skill_cli.py
-    ├── codex-desktop-automation/
-    │   ├── cli.ts
-    │   └── skill_cli.py
     ├── send-message/
     │   └── cli.ts
     └── shared/
@@ -198,11 +198,11 @@ src/
 - `send-message/`
   第一个“会话型发消息”示例
 - `codex-hook/`
-  Codex/微信/Codex Desktop 的本地后台桥接
-- `wechat-automation/`
-  本机微信窗口自动化发送
-- `codex-desktop-automation/`
-  Codex Desktop 窗口自动化发送
+  Codex/微信/Codex Desktop 的本地后台桥接，内部包含：
+  - hook 薄客户端
+  - daemon
+  - 微信窗口自动化
+  - Codex Desktop 窗口自动化
 - `shared/`
   两个示例共用的账号、配置、会话状态逻辑
 
@@ -216,16 +216,22 @@ src/
    复用本地保存的上次会话状态
 5. 再调用 `sendmessage`
 
-第二个示例现在是两段式结构：
+当前主桥接链路由四部分组成：
 
 1. `codex-hook/cli.ts`
    只负责接收 Codex hook 输入，并把任务投递给本地 daemon
 2. `codex-hook/daemon.ts`
    常驻负责：
-   - 把 Codex 事件发到微信
-   - `context_token` 失效时自动发 `"1"` 刷新会话
-   - 从微信收新消息并转发到 Codex Desktop
-   - 丢弃刷新控制消息 `"1"`，不把它送入 Codex
+   - 管理 Codex 事件出站队列
+   - 调用 SDK 把消息发到微信
+   - `context_token` 失效时触发刷新
+   - 轮询微信入站消息
+   - 把普通微信文本转发到 Codex Desktop
+   - 把刷新控制消息 `"1"` 识别为仅刷新，不送入 Codex
+3. `codex-hook/automation-wechat/`
+   负责在本机微信窗口里自动发送刷新消息，默认是 `"1"`
+4. `codex-hook/automation-codex-desktop/`
+   负责把微信里的普通文本自动输入到 Codex Desktop
 
 默认数据落盘位置：
 
@@ -235,6 +241,18 @@ src/
 │   └── <bot-account-id>.json
 └── state\\
     └── conversation.json
+```
+
+`codex-hook-daemon` 还会额外使用：
+
+```text
+%USERPROFILE%\\.weixinmessage\\codex-hook-daemon\\
+├── daemon.lock
+├── daemon-debug.log
+├── inbox\\
+├── queue\\
+├── sent\\
+└── failed\\
 ```
 
 其中：
@@ -372,7 +390,7 @@ npm run wechat-automation-send
 注意：
 
 - 这里的 `--to` 不是 `wxid`，而是微信客户端里能被该自动化服务搜索到的联系人显示名
-- 这个 example 默认调用当前仓库内置的 [skill_cli.py](C:\Users\weich\Desktop\weixin-clawbot-protocol-sdk\src\example\wechat-automation\skill_cli.py)
+- 这个 example 默认调用当前仓库内置的 [skill_cli.py](C:\Users\weich\Desktop\weixin-clawbot-protocol-sdk\src\example\codex-hook\automation-wechat\skill_cli.py)
 - 当前只内置了 `sendtext` 能力
 - `WECHAT_HOOK_REACTIVATE_TO` 用于 `codex-hook` 在 `context_token` 失效时自动发一条激活消息；未设置时会回退到 `WECHAT_AUTOMATION_TO`，再回退到 `微信ClawBot`
 - `WECHAT_HOOK_REACTIVATE_TEXT` 默认为 `1`，支持 `{toUserId}` 和 `{contextToken}` 模板变量

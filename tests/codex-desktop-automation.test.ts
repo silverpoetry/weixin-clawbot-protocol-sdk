@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseCodexDesktopAutomationArgs } from "../src/example/codex-desktop-automation/cli.js";
+import { parseCodexDesktopAutomationArgs } from "../src/example/codex-hook/automation-codex-desktop/cli.js";
 
 test("parseCodexDesktopAutomationArgs extracts content, script path, and python", () => {
   const options = parseCodexDesktopAutomationArgs([

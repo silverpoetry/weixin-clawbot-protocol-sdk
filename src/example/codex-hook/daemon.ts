@@ -1,7 +1,7 @@
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { watch, writeFileSync } from "node:fs";
 import { ClawbotApiError, ClawbotClient } from "../../sdk/index.js";
 import { loadAccount, loadLatestAccount } from "../shared/account-store.js";
 import { loadConfig, loadDotEnv } from "../shared/config.js";
@@ -10,8 +10,8 @@ import {
   loadStoredSessionTarget,
   waitForFreshSessionTarget,
 } from "../shared/session-target-resolver.js";
-import { runCodexDesktopAutomationCli } from "../codex-desktop-automation/cli.js";
-import { runWechatAutomationCli } from "../wechat-automation/cli.js";
+import { runCodexDesktopAutomationCli } from "./automation-codex-desktop/cli.js";
+import { runWechatAutomationCli } from "./automation-wechat/cli.js";
 import {
   extractCodexHookNotification,
   formatCodexHookNotification,
@@ -24,6 +24,7 @@ import {
   daemonDataFile,
   enqueueDaemonInbox,
   fileExists,
+  getDaemonInboxDir,
   listDaemonInboxPaths,
   listDaemonQueuePaths,
   loadDaemonEnvelope,
@@ -51,6 +52,15 @@ interface PendingQueueEntry {
 
 interface ReactivationState {
   triggeredAt?: string;
+}
+
+interface DeliveryLoopController {
+  stop: () => void;
+  flush: () => Promise<void>;
+}
+
+function logDaemonConsole(message: string): void {
+  process.stdout.write(`[${new Date().toISOString()}] ${message}\n`);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -107,6 +117,16 @@ function buildMergedHookMessage(entries: HookQueueEntry[]): string {
     : `[Codex积压消息 x${entries.length}]\n\n${parts.join("\n\n----------------\n\n")}`;
 
   return truncate(merged);
+}
+
+function describeQueueEntry(entry: HookQueueEntry): string {
+  try {
+    const notification = extractCodexHookNotification(parseCodexHookInput(entry.rawInput));
+    const eventName = notification.eventType || "unknown";
+    return `id=${entry.id} toUserId=${entry.target.toUserId} event=${eventName} kind=${notification.inferredKind}`;
+  } catch {
+    return `id=${entry.id} toUserId=${entry.target.toUserId}`;
+  }
 }
 
 function parseDaemonArgs(argv: string[]): CodexHookDaemonOptions {
@@ -228,6 +248,7 @@ async function deliverQueueGroup(entries: PendingQueueEntry[]): Promise<void> {
 
   const client = new ClawbotClient(account.botToken, account.baseUrl);
   const text = buildMergedHookMessage(entries.map((pending) => pending.entry));
+  const summary = entries.map((pending) => describeQueueEntry(pending.entry)).join("; ");
   let contextToken = queueEntry.target.contextToken;
   let reactivationAttemptedForToken: string | undefined;
   const deadlineMs = Math.min(...entries.map((pending) => Date.parse(pending.entry.deliverUntil)));
@@ -251,6 +272,7 @@ async function deliverQueueGroup(entries: PendingQueueEntry[]): Promise<void> {
 
     try {
       logDaemonDebug(`queue:send:attempt toUserId=${queueEntry.target.toUserId} token=${contextToken}`);
+      logDaemonConsole(`开始发送微信: toUserId=${queueEntry.target.toUserId} count=${entries.length} token=${contextToken || ""} entries=[${summary}]`);
       await client.sendMessage({
         msg: {
           from_user_id: queueEntry.accountId,
@@ -270,6 +292,7 @@ async function deliverQueueGroup(entries: PendingQueueEntry[]): Promise<void> {
         },
       });
       logDaemonDebug(`queue:send:ok toUserId=${queueEntry.target.toUserId} token=${contextToken}`);
+      logDaemonConsole(`发送成功: toUserId=${queueEntry.target.toUserId} count=${entries.length} entries=[${summary}]`);
       for (const pending of entries) {
         markQueueEntrySent(pending.path);
       }
@@ -277,6 +300,7 @@ async function deliverQueueGroup(entries: PendingQueueEntry[]): Promise<void> {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logDaemonDebug(`queue:send:error toUserId=${queueEntry.target.toUserId} token=${contextToken || ""} error=${JSON.stringify(message)}`);
+      logDaemonConsole(`发送失败: toUserId=${queueEntry.target.toUserId} count=${entries.length} error=${JSON.stringify(message)} entries=[${summary}]`);
       if (!isRetryableSessionError(error)) {
         throw error;
       }
@@ -318,9 +342,11 @@ async function pumpDaemonInbox(): Promise<void> {
       }
       moveInboxItemToQueue(path);
       logDaemonDebug(`inbox:queued id=${envelope.id}`);
+      logDaemonConsole(`检测到新投递: ${describeQueueEntry(loadQueueEntry(daemonDataFile(`queue/${envelope.id}.json`)))}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logDaemonDebug(`inbox:error path=${path} error=${JSON.stringify(message)}`);
+      logDaemonConsole(`投递处理失败: path=${path} error=${JSON.stringify(message)}`);
       clearStaleInboxItem(path);
     }
   }
@@ -356,6 +382,7 @@ async function pumpOutboundQueue(): Promise<void> {
         }
       }
       logDaemonDebug(`queue:group:error key=${group[0]?.entry.target.toUserId || "unknown"} error=${JSON.stringify(message)}`);
+      logDaemonConsole(`队列发送分组失败: toUserId=${group[0]?.entry.target.toUserId || "unknown"} error=${JSON.stringify(message)}`);
     }
   }
 
@@ -364,6 +391,123 @@ async function pumpOutboundQueue(): Promise<void> {
       markQueueEntryFailed(pending.path, "Delivery deadline exceeded.");
     }
   }
+}
+
+function getNextQueueWakeDelayMs(): number | undefined {
+  const now = Date.now();
+  let nextDelayMs: number | undefined;
+
+  for (const { entry } of listPendingQueueEntries()) {
+    const deadlineMs = Date.parse(entry.deliverUntil);
+    if (Number.isFinite(deadlineMs) && deadlineMs <= now) {
+      return 0;
+    }
+
+    if (!entry.availableAfter) {
+      return 0;
+    }
+
+    const availableAtMs = Date.parse(entry.availableAfter);
+    if (!Number.isFinite(availableAtMs) || availableAtMs <= now) {
+      return 0;
+    }
+
+    const delayMs = Math.max(0, availableAtMs - now);
+    nextDelayMs = nextDelayMs === undefined ? delayMs : Math.min(nextDelayMs, delayMs);
+  }
+
+  return nextDelayMs;
+}
+
+function startDeliveryLoop(): DeliveryLoopController {
+  const inboxDir = getDaemonInboxDir();
+  const watcher = watch(inboxDir, { persistent: true });
+  let stopped = false;
+  let running = false;
+  let rerunRequested = false;
+  let wakeTimer: NodeJS.Timeout | undefined;
+
+  function clearWakeTimer(): void {
+    if (wakeTimer) {
+      clearTimeout(wakeTimer);
+      wakeTimer = undefined;
+    }
+  }
+
+  async function runCycle(): Promise<void> {
+    if (stopped || running) {
+      return;
+    }
+
+    running = true;
+    clearWakeTimer();
+    try {
+      do {
+        rerunRequested = false;
+        await pumpDaemonInbox();
+        await pumpOutboundQueue();
+
+        const nextDelayMs = getNextQueueWakeDelayMs();
+        if (!rerunRequested && nextDelayMs !== undefined) {
+          wakeTimer = setTimeout(() => {
+            wakeTimer = undefined;
+            void runCycle();
+          }, nextDelayMs);
+        }
+      } while (rerunRequested && !stopped);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logDaemonDebug(`delivery-loop:error error=${JSON.stringify(message)}`);
+      logDaemonConsole(`投递发送循环异常: error=${JSON.stringify(message)}`);
+      if (!stopped && !wakeTimer) {
+        wakeTimer = setTimeout(() => {
+          wakeTimer = undefined;
+          void runCycle();
+        }, 1000);
+      }
+    } finally {
+      running = false;
+      if (rerunRequested && !stopped) {
+        void runCycle();
+      }
+    }
+  }
+
+  function scheduleImmediateRun(): void {
+    clearWakeTimer();
+    if (running) {
+      rerunRequested = true;
+      return;
+    }
+    void runCycle();
+  }
+
+  watcher.on("change", (_eventType, filename) => {
+    if (!filename || (typeof filename === "string" && filename.endsWith(".json"))) {
+      scheduleImmediateRun();
+    }
+  });
+
+  watcher.on("error", (error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    logDaemonDebug(`delivery-loop:watcher:error error=${JSON.stringify(message)}`);
+    logDaemonConsole(`投递目录监听异常: error=${JSON.stringify(message)}`);
+    scheduleImmediateRun();
+  });
+
+  logDaemonConsole(`投递发送已切换为事件驱动: inboxDir=${inboxDir}`);
+  scheduleImmediateRun();
+
+  return {
+    stop: () => {
+      stopped = true;
+      clearWakeTimer();
+      watcher.close();
+    },
+    flush: async () => {
+      await runCycle();
+    },
+  };
 }
 
 function isEligibleInboundMessage(
@@ -454,6 +598,27 @@ async function pumpInboundWechatToCodex(
   }
 }
 
+async function runInboundWechatLoop(
+  client: ClawbotClient,
+  startupTimeMs: number,
+  options: CodexHookDaemonOptions,
+  isStopped: () => boolean,
+): Promise<void> {
+  while (!isStopped()) {
+    try {
+      await pumpInboundWechatToCodex(client, startupTimeMs, options);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logDaemonDebug(`inbound-loop:error error=${JSON.stringify(message)}`);
+      logDaemonConsole(`微信入站轮询异常: error=${JSON.stringify(message)}`);
+      if (isStopped()) {
+        return;
+      }
+      await sleep(1000);
+    }
+  }
+}
+
 export async function runCodexHookDaemon(argv: string[]): Promise<void> {
   const options = parseDaemonArgs(argv);
   if (!tryAcquireDaemonLock()) {
@@ -469,17 +634,18 @@ export async function runCodexHookDaemon(argv: string[]): Promise<void> {
 
   const client = new ClawbotClient(account.botToken, account.baseUrl || config.baseUrl);
   const startupTimeMs = Date.now();
+  let stopped = false;
   logDaemonDebug(`daemon:start pid=${process.pid}`);
+  logDaemonConsole(`微信 Hook Daemon 已启动 pid=${process.pid} pollMs=${options.pollMs}`);
+  const deliveryLoop = startDeliveryLoop();
 
   try {
-    for (;;) {
-      await pumpDaemonInbox();
-      await pumpOutboundQueue();
-      await pumpInboundWechatToCodex(client, startupTimeMs, options);
-      await sleep(options.pollMs);
-    }
+    await runInboundWechatLoop(client, startupTimeMs, options, () => stopped);
   } finally {
+    stopped = true;
+    deliveryLoop.stop();
     logDaemonDebug(`daemon:stop pid=${process.pid}`);
+    logDaemonConsole(`微信 Hook Daemon 已停止 pid=${process.pid}`);
     releaseDaemonLock();
   }
 }
